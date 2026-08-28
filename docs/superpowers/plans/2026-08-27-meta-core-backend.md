@@ -21,7 +21,9 @@
 - Tokens Meta criptografados em repouso.
 - Nunca logar segredos/tokens.
 - Graph API version configurável.
-- Antes de implementar endpoints/payloads Meta reais, validar tudo contra a documentação Meta vigente.
+- Antes de implementar endpoints/payloads Meta reais, validar cada operação contra a documentação Meta vigente; uma capability não verificada não bloqueia operações independentes.
+- A combinação `comment_id` + primeira Private Reply + botão regular postback permanece experimental e não pode ser implementada por composição de payloads documentados separadamente.
+- O UX aprovado permanece `QUERO` → resposta pública → opening Private Reply com `INICIAR AQUI` → `FLOW_CONTINUE` → segunda DM; nenhuma incerteza de transporte autoriza fallback.
 - Primeiro botão é botão regular/postback, NÃO Quick Reply.
 - `QUERO`, textos e `FLOW_CONTINUE` são configuração temporária isolada.
 - PostgreSQL e Redis via Docker Compose.
@@ -446,7 +448,7 @@ export const createEventWorker = (connection: ConnectionOptions, handle: EventJo
 
 **Interfaces**
 - Consumes: escopo e permissões previstas na spec; data da execução desta tarefa.
-- Produces: `MetaVerifiedContract` documental com URLs, método, campos, permissões, evento de webhook, assinatura, limites de Private Reply, botão regular/postback ou equivalente, versão testada e links oficiais; somente os dados confirmados podem alimentar Tasks 10–15.
+- Produces: registro documental que distingue operações verificadas da capability experimental; somente contratos individualmente confirmados podem alimentar implementações concretas.
 
 - [ ] Step 1: Escrever teste documental que falha enquanto decisões e fontes oficiais não estiverem registradas.
 
@@ -460,7 +462,7 @@ it('records every required verified Meta decision', () => {
 ```
 
 - [ ] Step 2: Executar `pnpm exec vitest run test/docs/meta-integration.test.ts`; esperar FAIL por documento ausente.
-- [ ] Step 3: Consultar exclusivamente a documentação oficial Meta vigente e registrar, para Instagram Login/OAuth, permissões, comment webhook, reply pública, Private Reply, formato de botão regular, evento `messaging_postbacks` ou equivalente confirmado, `X-Hub-Signature-256` ou mecanismo vigente e versionamento: URL oficial, data, método, path, request/response mínimo e restrições. Se a documentação não confirmar botão/postback compatível, registrar a incompatibilidade como bloqueio factual e interromper Tasks 10–21 sem inventar endpoint ou campo.
+- [ ] Step 3: Registrar que Private Reply textual usa `recipient.comment_id`; Button Template usa `recipient.id`/IGSID; `messaging_postbacks` cobre botões postback em conversas; e a combinação exata `comment_id` + primeira Private Reply + botão regular postback está `UNVERIFIED`. Registrar a evidência ManyChat como capability experimental, sem inventar payload. Tasks 10–12 e todas as operações independentes podem continuar.
 - [ ] Step 4: Executar `pnpm exec vitest run test/docs/meta-integration.test.ts`; esperar PASS, e revisar manualmente que cada endpoint/campo do documento possui link oficial diretamente adjacente.
 - [ ] Step 5: Executar `git add docs/META-INTEGRATION.md test/docs/meta-integration.test.ts && git commit -m "docs: verify current meta integration contracts"`.
 
@@ -486,7 +488,7 @@ it.each([[500, 'transient'], [400, 'invalid_request'], [401, 'auth'], [403, 'aut
 ```
 
 - [ ] Step 2: Executar `pnpm --filter @flowchat/meta test -- http-client.test.ts`; esperar FAIL por cliente ausente.
-- [ ] Step 3: Implementar `fetch` com `AbortSignal.timeout`, base `https://graph.facebook.com/${graphApiVersion}`, Authorization header, parser de erro sem token/body sensível; timeout ou falha de rede após despacho gera `ambiguous`, 5xx `transient`, 400 `invalid_request`, 401/403 `auth`.
+- [ ] Step 3: Implementar `fetch` com `AbortSignal.timeout`, base Instagram Login verificada `https://graph.instagram.com/${graphApiVersion}`, Authorization header, parser de erro sem token/body sensível; timeout ou falha de rede após despacho gera `ambiguous`, 5xx `transient`, 400 `invalid_request`, 401/403 `auth`.
 
 ```ts
 export class MetaApiError extends Error {
@@ -570,32 +572,30 @@ export function deterministicDedupKey(parts: readonly string[]): string {
 ### Task 13: Operações de saída Meta isoladas
 
 **Files**
-- Create: `packages/meta/src/comment-replies.ts`, `packages/meta/src/private-replies.ts`, `packages/meta/src/messages.ts`, `packages/meta/src/outbound.test.ts`
-- Modify: `packages/meta/src/index.ts`
+- Create: `packages/contracts/src/opening-private-reply.ts`, `packages/meta/src/comment-replies.ts`, `packages/meta/src/private-replies.ts`, `packages/meta/src/messages.ts`, `packages/meta/src/opening-private-reply-sender.ts`, `packages/meta/src/outbound.test.ts`
+- Modify: `packages/contracts/src/index.ts`, `packages/meta/src/errors.ts`, `packages/meta/src/index.ts`
 - Test: `packages/meta/src/outbound.test.ts`
 
 **Interfaces**
 - Consumes: `MetaHttpClient`; endpoints/payloads confirmados na Task 9.
-- Produces: `replyToComment(input: { accessToken; commentId; text; providerRequestId }): Promise<{ externalMessageId: string | null }>`; `sendPrivateReply(input: { accessToken; commentId; text; button: { title; payload }; providerRequestId }): Promise<{ externalMessageId: string | null }>`; `sendDirectMessage(input: { accessToken; recipientId; text; providerRequestId }): Promise<{ externalMessageId: string | null }>`.
+- Produces: `sendPrivateReplyText(...)`, `sendButtonTemplate(...)`, `sendDirectMessage(...)`, `replyToComment(...)`; contrato interno `OpeningPrivateReplySender`; `MetaOpeningPrivateReplySender` bloqueado por `MetaCapabilityNotVerifiedError` antes de qualquer HTTP enquanto a capability não for confirmada.
 
-- [ ] Step 1: Escrever testes que exigem o botão regular e rejeitam modelagem Quick Reply.
+- [ ] Step 1: Escrever testes para cada operação documentada separadamente e para o bloqueio tipado da capability experimental.
 
 ```ts
-it('sends the confirmed regular postback button shape', async () => {
-  await sendPrivateReply({ accessToken: 'token', commentId: 'c1', text: 'body', button: { title: 'INICIAR AQUI', payload: 'FLOW_CONTINUE' }, providerRequestId: 'fx-1' });
-  expect(requestSpy).toHaveBeenCalledWith(expect.objectContaining({ body: VERIFIED_REGULAR_BUTTON_BODY }));
-  expect(JSON.stringify(requestSpy.mock.calls)).not.toMatch(/quick_repl(y|ies)/i);
+it('blocks the unverified opening interactive private reply before HTTP', async () => {
+  await expect(sender.send(openingInput)).rejects.toBeInstanceOf(MetaCapabilityNotVerifiedError);
+  expect(requestSpy).not.toHaveBeenCalled();
 });
 ```
 
 - [ ] Step 2: Executar `pnpm --filter @flowchat/meta test -- outbound.test.ts`; esperar FAIL por operações ausentes.
-- [ ] Step 3: Implementar cada operação em arquivo próprio, validando entrada com Zod, delegando HTTP ao cliente e traduzindo somente a resposta confirmada para `externalMessageId`. Usar `providerRequestId` no mecanismo idempotente oficial se confirmado; caso não exista, mantê-lo apenas como identificador local e preservar a política `UNCERTAIN` da Task 18.
+- [ ] Step 3: Implementar separadamente somente os quatro contratos documentados. `sendPrivateReplyText` usa o contrato de comment ID textual; `sendButtonTemplate` usa IGSID; `sendDirectMessage` envia texto a IGSID; `replyToComment` responde ao comentário. Não compartilhar um builder que permita combinar `commentId` com template. Implementar `MetaOpeningPrivateReplySender.send` como falha tipada determinística, sem TODO, código fictício ou chamada HTTP. Usar `providerRequestId` no mecanismo idempotente oficial somente se confirmado; caso contrário mantê-lo local e preservar `UNCERTAIN`.
 
 ```ts
-export const sendPrivateReply = async (input: SendPrivateReplyInput): Promise<SendResult> => {
-  const safe = sendPrivateReplySchema.parse(input);
-  return parseSendResult(await client.request({ method: VERIFIED_PRIVATE_REPLY_METHOD, path: privateReplyPath(safe.commentId), accessToken: safe.accessToken, body: regularButtonBody(safe) }));
-};
+export class MetaCapabilityNotVerifiedError extends Error {
+  readonly capability = 'OPENING_PRIVATE_REPLY_REGULAR_POSTBACK' as const;
+}
 ```
 
 - [ ] Step 4: Executar `pnpm --filter @flowchat/meta test -- outbound.test.ts`; esperar PASS.
@@ -789,23 +789,23 @@ export function toBullMqError(error: unknown): Error {
 - Test: `apps/worker/src/comment-handler.test.ts`
 
 **Interfaces**
-- Consumes: `InstagramCommentCreated`, `EffectExecutor`, `replyToComment`, `sendPrivateReply`, `recordInbound`, `recordOutbound`, decriptação do token da conta.
+- Consumes: `InstagramCommentCreated`, `EffectExecutor`, `replyToComment`, `OpeningPrivateReplySender`, `recordInbound`, `recordOutbound`, decriptação do token da conta.
 - Produces: `SPRINT_ONE_BEHAVIOR`; `containsKeyword(text: string): boolean`; `CommentHandler.handle(event, webhookEventId): Promise<void>`.
 
 - [ ] Step 1: Escrever testes de matching e efeitos independentes.
 
 ```ts
 it.each(['QUERO', 'eu quero agora', 'QuErO!'])('matches %s case-insensitively', text => expect(containsKeyword(text)).toBe(true));
-it('uses two independently keyed effects and the regular button', async () => {
+it('uses two independently keyed effects through the opening sender port', async () => {
   await handler.handle({ ...commentEvent, text: 'Eu quero' }, 'webhook-db');
   expect(effectRun).toHaveBeenNthCalledWith(1, expect.objectContaining({ kind: 'COMMENT_PUBLIC_REPLY' }), expect.any(Function));
   expect(effectRun).toHaveBeenNthCalledWith(2, expect.objectContaining({ kind: 'COMMENT_PRIVATE_REPLY' }), expect.any(Function));
-  expect(sendPrivateReply).toHaveBeenCalledWith(expect.objectContaining({ button: { title: 'INICIAR AQUI', payload: 'FLOW_CONTINUE' } }));
+  expect(openingPrivateReplySender.send).toHaveBeenCalledWith(expect.objectContaining({ button: { title: 'INICIAR AQUI', payload: 'FLOW_CONTINUE' } }));
 });
 ```
 
 - [ ] Step 2: Executar `pnpm --filter @flowchat/worker test -- comment-handler.test.ts`; esperar FAIL por handler ausente.
-- [ ] Step 3: Isolar constantes e usar substring Unicode case-insensitive via `text.normalize('NFKC').toLocaleUpperCase('pt-BR').includes('QUERO')`. Persistir inbound antes dos efeitos; executar resposta pública e Private Reply por effects distintos; registrar cada outbound após completar o respectivo efeito.
+- [ ] Step 3: Isolar constantes e usar substring Unicode case-insensitive via `text.normalize('NFKC').toLocaleUpperCase('pt-BR').includes('QUERO')`. Persistir inbound antes dos efeitos; executar resposta pública e `OpeningPrivateReplySender` por effects distintos; registrar cada outbound após completar o respectivo efeito. O handler não importa nem conhece payload Meta.
 
 ```ts
 export const SPRINT_ONE_BEHAVIOR = Object.freeze({
@@ -866,7 +866,7 @@ switch (job.data.event.type) {
 - Test: `test/integration/health.integration.test.ts`, `test/integration/webhook-worker.integration.test.ts`, `test/integration/idempotency.integration.test.ts`
 
 **Interfaces**
-- Consumes: API, PostgreSQL, Redis, Queue, Worker, cliente Meta e todos os handlers.
+- Consumes: API, PostgreSQL, Redis, Queue, Worker, cliente Meta, `OpeningPrivateReplySender` substituível e todos os handlers.
 - Produces: suíte `test:integration`; fixtures HTTP Meta locais; prova automatizada sem conta Meta real.
 
 - [ ] Step 1: Escrever cenários completos inicialmente falhos.
@@ -883,7 +883,7 @@ it.each([
 ```
 
 - [ ] Step 2: Executar `pnpm test:integration`; esperar FAIL até o harness iniciar API/Worker e limpar bancos entre casos.
-- [ ] Step 3: Implementar harness com PostgreSQL/Redis do Compose, schema isolado por execução, queue prefix único, servidor HTTP Meta falso e clock determinístico. Cobrir health, assinatura inválida, verification GET, comment/message/postback normalization, enqueue, worker, 5xx e timeout com backoff, 400/401/403 sem loop, reconciliação ou chave idempotente antes de repetir timeout ambíguo, persistência de `Message.rawPayload` sanitizado e todos os cinco casos explícitos de idempotência.
+- [ ] Step 3: Implementar harness com PostgreSQL/Redis do Compose, schema isolado por execução, queue prefix único, servidor HTTP Meta falso, mock de `OpeningPrivateReplySender` e clock determinístico. Cobrir health, assinatura inválida, verification GET, comment/message/postback normalization, enqueue, worker, 5xx e timeout com backoff, 400/401/403 sem loop, reconciliação ou chave idempotente antes de repetir timeout ambíguo, persistência de `Message.rawPayload` sanitizado e todos os cinco casos explícitos de idempotência. O mock prova o UX e a arquitetura, não um payload Meta.
 
 ```ts
 export async function createIntegrationHarness(): Promise<IntegrationHarness> {
@@ -932,7 +932,7 @@ it('documents the complete local workflow', () => {
 
 **Interfaces**
 - Consumes: `docs/META-INTEGRATION.md`, endpoints OAuth/webhook, fluxo completo e critérios de idempotência.
-- Produces: registro manual datado com evidências esperadas para a Definition of Done real.
+- Produces: capability probe real e registro manual datado com evidências sanitizadas para resolver o contrato de abertura.
 
 - [ ] Step 1: Escrever teste documental do checklist real.
 
@@ -944,7 +944,7 @@ it('covers the real Meta acceptance path', () => {
 ```
 
 - [ ] Step 2: Executar `pnpm exec vitest run test/docs/manual-meta-test.test.ts`; esperar FAIL por documento ausente.
-- [ ] Step 3: Criar checklist separado com pré-condições de conta profissional/App Review, configuração do App, OAuth, URL HTTPS pública, subscription/verificação, comentário real `QUERO`, texto público exato, Private Reply e botão regular `INICIAR AQUI`, clique e segunda DM exata, inspeção segura de banco/Worker e reentrega/replay quando possível. Para cada item, incluir campos `Executed at`, `Graph API version`, `Expected`, `Observed`, `Evidence reference` e `Pass/Fail`, sem armazenar tokens ou dados pessoais desnecessários.
+- [ ] Step 3: Criar um capability probe real: criar comentário de teste; enviar a primeira Private Reply; testar somente formas sustentadas por documentação ou evidência previamente validada; verificar visualmente `INICIAR AQUI`; clicar; confirmar o webhook; e registrar request/response sanitizados. Para cada item incluir `Executed at`, `Graph API version`, `Expected`, `Observed`, `Evidence reference` e `Pass/Fail`, sem tokens ou dados pessoais desnecessários. Atualizar `docs/META-INTEGRATION.md` com o contrato observado. Se confirmar, implementar o adapter concreto e remover o bloqueio; se provar impossibilidade, parar e pedir decisão de produto antes de fallback textual ou Quick Reply.
 - [ ] Step 4: Executar `pnpm exec vitest run test/docs/manual-meta-test.test.ts && pnpm lint && pnpm typecheck && pnpm test && pnpm build`; esperar todos PASS. Executar também `git diff --check`; esperar exit code 0.
 - [ ] Step 5: Executar `git add docs/MANUAL-META-TEST.md test/docs/manual-meta-test.test.ts && git commit -m "docs: add real meta acceptance checklist"`.
 
@@ -967,7 +967,8 @@ it('covers the real Meta acceptance path', () => {
 | Retry 5xx/timeout e falhas 400/401/403 | 10, 18, 21 |
 | Idempotência por evento e efeito externo parcial | 5, 16, 18, 21 |
 | Comentário `QUERO`, resposta pública e Private Reply | 19 |
-| Botão regular `INICIAR AQUI`/`FLOW_CONTINUE`, nunca Quick Reply | 9, 13, 19 |
+| Botão regular `INICIAR AQUI`/`FLOW_CONTINUE`, nunca Quick Reply | 9, 13, 19, 23 |
+| Capability experimental e erro tipado sem payload inventado | 9, 13, 19, 21, 23 |
 | Postback e segunda DM única | 20, 21 |
 | Message webhook persistido sem automação extra | 12, 17, 20 |
 | Integração automatizada sem conta Meta real | 21 |

@@ -33,6 +33,12 @@ export default defineWorkspace([
   },
   {
     test: {
+      include: ['packages/meta/src/**/*.test.ts'],
+      environment: 'node',
+    },
+  },
+  {
+    test: {
       include: ['apps/api/src/**/*.test.ts'],
       environment: 'node',
     },

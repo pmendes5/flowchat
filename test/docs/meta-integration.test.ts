@@ -20,5 +20,12 @@ describe('Meta integration contract', () => {
 
     expect(doc).toMatch(/https:\/\/developers\.facebook\.com\//);
     expect(doc).toContain('Verified on:');
+    expect(doc).toContain('recipient.comment_id');
+    expect(doc).toContain('recipient.id');
+    expect(doc).toContain('messaging_postbacks');
+    expect(doc).toContain('UNVERIFIED');
+    expect(doc).toContain('experimental capability');
+    expect(doc).toContain('ManyChat');
+    expect(doc).not.toContain('Tasks 10–21 must not implement');
   });
 });
