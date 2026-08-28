@@ -1,8 +1,8 @@
-# FlowChat Meta Core Backend Implementation Plan
-
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** construir o backend local da Sprint 1 que prove o fluxo real Instagram: comentário `QUERO` → resposta pública → Private Reply com botão regular `INICIAR AQUI` → clique/postback → segunda DM.
+# FlowChat Meta Core Backend Implementation Plan
+
+**Goal:** construir o backend local da Sprint 1 que prove o fluxo real Instagram: comentário QUERO → resposta pública → Private Reply com botão regular INICIAR AQUI → clique/postback → segunda DM.
 
 **Architecture:** monorepo TypeScript com NestJS API, Worker BullMQ, PostgreSQL/Prisma, Redis e packages isolando config, contratos e integração Meta. A API autentica, normaliza, persiste e enfileira rapidamente; o Worker executa efeitos externos idempotentes, persistidos individualmente, sem expor payloads Meta às camadas internas.
 
@@ -28,6 +28,9 @@
 - Desenvolvimento local com Cloudflare Tunnel posteriormente.
 - TDD para comportamento implementável por testes.
 - `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm build` precisam passar.
+- Executar as Tasks estritamente na ordem numérica; cada Task consome somente interfaces já produzidas.
+- Cada Task fecha um ciclo red–green verificável e termina em um commit pequeno; não agrupar Tasks distintas no mesmo commit.
+- Executar um checkbox por vez e confirmar seu resultado esperado antes de avançar ao próximo.
 - Não criar entidades ou capacidades de frontend, React, editor visual, React Flow, Flow Engine, IA, OpenAI, billing, planos, assinatura, analytics avançado, dashboard, inbox/CRM completos, publicação, insights, anúncios, workspace ou multi-tenancy.
 
 ---
@@ -709,27 +712,28 @@ if (created) await queue.add('process-webhook', { webhookEventId: created.id, ev
 
 **Interfaces**
 - Consumes: `InstagramEvent`, models Prisma da Task 5.
-- Produces: `recordInbound(event: InstagramEvent): Promise<{ contactId: string; conversationId: string }>`; `recordOutbound(input: { conversationId; externalMessageId; type; text; structuredPayload?; rawPayload? }): Promise<void>`.
+- Produces: `recordInbound(event: InstagramEvent, sourceWebhookEventId: string): Promise<{ contactId: string; conversationId: string }>`; `recordOutbound(input: { conversationId; externalMessageId; type; text; structuredPayload?; rawPayload? }): Promise<void>`. O serviço copia de forma opaca `WebhookEvent.payload` para `Message.rawPayload` pelo ID de origem, sem expor formatos Meta aos handlers.
 
 - [ ] Step 1: Escrever teste de upsert e payload estruturado de postback.
 
 ```ts
 it('upserts contact/conversation and stores postback payload', async () => {
-  const ids = await service.recordInbound(postbackEvent);
+  const ids = await service.recordInbound(postbackEvent, 'webhook-db');
   expect(contactUpsert).toHaveBeenCalledWith(expect.objectContaining({ where: { instagramAccountId_instagramScopedUserId: { instagramAccountId: 'account-db', instagramScopedUserId: 'u-1' } } }));
-  expect(messageCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ direction: 'INBOUND', type: 'POSTBACK', structuredPayload: { payload: 'FLOW_CONTINUE' } }) }));
+  expect(messageCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ direction: 'INBOUND', type: 'POSTBACK', structuredPayload: { payload: 'FLOW_CONTINUE' }, rawPayload: sanitizedStoredWebhookPayload }) }));
   expect(ids.conversationId).toBe('conversation-db');
 });
 ```
 
 - [ ] Step 2: Executar `pnpm --filter @flowchat/worker test -- persistence.service.test.ts`; esperar FAIL por serviço ausente.
-- [ ] Step 3: Resolver `InstagramAccount` por `event.accountId`, fazer upserts transacionais de Contact/Conversation, atualizar `lastMessageAt`, persistir comment/message/postback inbound e outbound; usar apenas evento normalizado no serviço e guardar raw payload somente no `WebhookEvent` de ingresso.
+- [ ] Step 3: Resolver `InstagramAccount` por `event.accountId`, fazer upserts transacionais de Contact/Conversation, atualizar `lastMessageAt` e persistir comment/message/postback inbound e outbound. Os handlers passam apenas o evento normalizado e `sourceWebhookEventId`; dentro da transação, o serviço lê `WebhookEvent.payload` e o copia como JSON opaco para `Message.rawPayload`, sem interpretar nem exportar tipos Meta. Para outbound, persistir em `rawPayload` somente a resposta sanitizada do provider, nunca access token, app secret ou request body sensível.
 
 ```ts
 await tx.message.create({ data: { conversationId: conversation.id, externalMessageId: event.messageId ?? null,
   direction: 'INBOUND', type: event.type === 'instagram.postback.received' ? 'POSTBACK' : 'TEXT',
   text: 'text' in event ? event.text ?? null : null,
-  structuredPayload: event.type === 'instagram.postback.received' ? { payload: event.payload } : undefined } });
+  structuredPayload: event.type === 'instagram.postback.received' ? { payload: event.payload } : undefined,
+  rawPayload: sourceWebhookEvent.payload } });
 ```
 
 - [ ] Step 4: Executar `pnpm --filter @flowchat/worker test -- persistence.service.test.ts`; esperar PASS.
@@ -744,7 +748,7 @@ await tx.message.create({ data: { conversationId: conversation.id, externalMessa
 
 **Interfaces**
 - Consumes: `ExternalEffect`, `MetaApiError`, Prisma transactions.
-- Produces: `EffectsRepository.claim(sourceEventId: string, kind: ExternalEffectKind): Promise<EffectClaim>`; `complete(id: string, providerResultId: string | null): Promise<void>`; `fail(id: string, errorCode: string): Promise<void>`; `markUncertain(id: string, errorCode: string): Promise<void>`; `EffectExecutor.run<T>(input, operation): Promise<T | { skipped: true }>`; `classifyJobError(error): 'retry' | 'discard' | 'uncertain'`.
+- Produces: `EffectsRepository.claim(sourceEventId: string, kind: ExternalEffectKind): Promise<EffectClaim>`; `complete(id: string, providerResultId: string | null): Promise<void>`; `fail(id: string, errorCode: string): Promise<void>`; `markUncertain(id: string, errorCode: string): Promise<void>`; `EffectExecutor.run<T>(input: { sourceEventId: string; kind: ExternalEffectKind; reconcile?: () => Promise<'completed' | 'not_sent' | 'unknown'> }, operation: () => Promise<T>): Promise<T | { skipped: true }>`; `classifyJobError(error): 'retry' | 'discard'`. Um efeito `UNCERTAIN` somente volta a chamar a Meta quando `reconcile()` retorna `not_sent` ou quando a mesma `providerRequestId` possui semântica idempotente oficialmente confirmada.
 
 - [ ] Step 1: Escrever testes concorrentes e de falha ambígua.
 
@@ -759,14 +763,17 @@ it('does not automatically retry an ambiguous send', async () => {
   await expect(executor.run(input, operation)).rejects.toThrow();
   expect(repository.markUncertain).toHaveBeenCalledWith(effect.id, 'TIMEOUT');
 });
+it('retries a timeout through BullMQ without blindly repeating the effect', () => {
+  expect(classifyJobError(new MetaApiError('ambiguous', undefined, 'TIMEOUT'))).toBe('retry');
+});
 ```
 
 - [ ] Step 2: Executar `pnpm --filter @flowchat/database test -- effects.repository.test.ts && pnpm --filter @flowchat/worker test -- effect-executor.test.ts retry-policy.test.ts`; esperar FAIL.
-- [ ] Step 3: Implementar claim atômico: insert pela unique key; `COMPLETED`, `FAILED` e `UNCERTAIN` retornam skip; `PROCESSING` recente retorna busy; `PROCESSING` expirado só pode ser retomado quando a operação oficial aceitar chave idempotente confirmada. Gerar `providerRequestId = sha256(sourceEventId + ':' + kind)`. Marcar 5xx confirmado como `FAILED` e lançar retryable; 400/401/403 como `FAILED` e lançar `UnrecoverableError`; timeout pós-despacho como `UNCERTAIN` e `UnrecoverableError`.
+- [ ] Step 3: Implementar claim atômico: insert pela unique key; `COMPLETED` retorna skip; `PROCESSING` recente retorna busy; `PROCESSING` expirado só pode retomar a chamada quando o mecanismo oficial confirmado aceitar a mesma chave idempotente. Gerar `providerRequestId = sha256(sourceEventId + ':' + kind)`. Meta 5xx e timeout são retryable e voltam pelo backoff exponencial do BullMQ; antes de repetir um timeout pós-despacho, marcar `UNCERTAIN` e reconciliar o resultado ou reutilizar a chave idempotente confirmada, nunca realizar reenvio cego. Meta 400 inválido e 401/403 ficam `FAILED` e lançam `UnrecoverableError`, sem loop. Se a API vigente não oferecer idempotência nem reconciliação para um efeito ambíguo, manter `UNCERTAIN`, encerrar o retry desse efeito com falha operacional observável e não arriscar duplicá-lo.
 
 ```ts
 export function toBullMqError(error: unknown): Error {
-  if (error instanceof MetaApiError && error.kind === 'transient') return error;
+  if (error instanceof MetaApiError && (error.kind === 'transient' || error.kind === 'ambiguous')) return error;
   return new UnrecoverableError(error instanceof MetaApiError ? `Meta ${error.kind}` : 'Permanent worker failure');
 }
 ```
@@ -838,13 +845,13 @@ it('safely ignores an unknown payload', async () => {
 ```
 
 - [ ] Step 2: Executar `pnpm --filter @flowchat/worker test -- postback-handler.test.ts event.processor.test.ts`; esperar FAIL.
-- [ ] Step 3: Persistir cada postback inbound; comparar payload por igualdade exata; logar somente event ID e resultado `ignored`; dispatch explícito dos três tipos internos, tratando mensagem recebida apenas como persistência nesta Sprint; atualizar status e erro sanitizado; conectar `createEventWorker` ao processor.
+- [ ] Step 3: Persistir cada postback inbound com `recordInbound(event, webhookEventId)`; comparar payload por igualdade exata; logar somente event ID e resultado `ignored`; dispatch explícito dos três tipos internos, tratando mensagem recebida apenas como persistência nesta Sprint; atualizar status e erro sanitizado; conectar `createEventWorker` ao processor.
 
 ```ts
 switch (job.data.event.type) {
   case 'instagram.comment.created': return commentHandler.handle(job.data.event, job.data.webhookEventId);
   case 'instagram.postback.received': return postbackHandler.handle(job.data.event, job.data.webhookEventId).then(() => undefined);
-  case 'instagram.message.received': return persistence.recordInbound(job.data.event).then(() => undefined);
+  case 'instagram.message.received': return persistence.recordInbound(job.data.event, job.data.webhookEventId).then(() => undefined);
 }
 ```
 
@@ -876,7 +883,7 @@ it.each([
 ```
 
 - [ ] Step 2: Executar `pnpm test:integration`; esperar FAIL até o harness iniciar API/Worker e limpar bancos entre casos.
-- [ ] Step 3: Implementar harness com PostgreSQL/Redis do Compose, schema isolado por execução, queue prefix único, servidor HTTP Meta falso e clock determinístico. Cobrir health, assinatura inválida, verification GET, comment/message/postback normalization, enqueue, worker, 5xx com backoff, 400/401/403 sem loop, timeout ambíguo sem reenvio, persistência e todos os cinco casos explícitos de idempotência.
+- [ ] Step 3: Implementar harness com PostgreSQL/Redis do Compose, schema isolado por execução, queue prefix único, servidor HTTP Meta falso e clock determinístico. Cobrir health, assinatura inválida, verification GET, comment/message/postback normalization, enqueue, worker, 5xx e timeout com backoff, 400/401/403 sem loop, reconciliação ou chave idempotente antes de repetir timeout ambíguo, persistência de `Message.rawPayload` sanitizado e todos os cinco casos explícitos de idempotência.
 
 ```ts
 export async function createIntegrationHarness(): Promise<IntegrationHarness> {
