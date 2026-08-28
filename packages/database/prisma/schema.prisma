@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model InstagramAccount {
+  id                   String            @id @default(cuid())
+  instagramUserId      String            @unique
+  username             String
+  accessTokenEncrypted String
+  tokenExpiresAt       DateTime?
+  status               AccountStatus     @default(ACTIVE)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  contacts             Contact[]
+  conversations        Conversation[]
+}
+
+model WebhookEvent {
+  id              String           @id @default(cuid())
+  externalEventId String?
+  dedupKey        String           @unique
+  eventType       String
+  payload         Json
+  status          WebhookStatus    @default(PENDING)
+  receivedAt      DateTime         @default(now())
+  processedAt     DateTime?
+  error           String?
+  externalEffects ExternalEffect[]
+
+  @@index([status, receivedAt])
+}
+
+model Contact {
+  id                      String           @id @default(cuid())
+  instagramAccountId      String
+  instagramScopedUserId   String
+  username                String?
+  name                    String?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  instagramAccount        InstagramAccount @relation(fields: [instagramAccountId], references: [id])
+  conversations           Conversation[]
+
+  @@unique([instagramAccountId, instagramScopedUserId])
+}
+
+model Conversation {
+  id                 String             @id @default(cuid())
+  instagramAccountId String
+  contactId          String
+  status             ConversationStatus @default(OPEN)
+  lastMessageAt      DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  instagramAccount   InstagramAccount   @relation(fields: [instagramAccountId], references: [id])
+  contact            Contact            @relation(fields: [contactId], references: [id])
+  messages           Message[]
+
+  @@unique([instagramAccountId, contactId])
+  @@index([lastMessageAt])
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  conversationId    String
+  externalMessageId String?          @unique
+  direction         MessageDirection
+  type              MessageType
+  text              String?
+  structuredPayload Json?
+  rawPayload        Json?
+  createdAt         DateTime         @default(now())
+  conversation      Conversation     @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+}
+
+model ExternalEffect {
+  id                String               @id @default(cuid())
+  sourceEventId     String
+  kind              ExternalEffectKind
+  status            ExternalEffectStatus @default(PENDING)
+  providerRequestId String               @unique
+  providerResultId  String?
+  attempts          Int                  @default(0)
+  lastErrorCode     String?
+  createdAt         DateTime             @default(now())
+  completedAt       DateTime?
+  sourceEvent       WebhookEvent         @relation(fields: [sourceEventId], references: [id])
+
+  @@unique([sourceEventId, kind])
+  @@index([status, createdAt])
+}
+
+enum AccountStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum WebhookStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  COMMENT
+  POSTBACK
+  PRIVATE_REPLY
+  PUBLIC_REPLY
+}
+
+enum ExternalEffectKind {
+  COMMENT_PUBLIC_REPLY
+  COMMENT_PRIVATE_REPLY
+  POSTBACK_SECOND_DM
+}
+
+enum ExternalEffectStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  UNCERTAIN
+}

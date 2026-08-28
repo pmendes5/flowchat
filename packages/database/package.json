@@ -1,0 +1,20 @@
+{
+  "name": "@flowchat/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json",
+    "prisma": "prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "prisma": "^6.14.0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@flowchat/security",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0"
+  }
+}

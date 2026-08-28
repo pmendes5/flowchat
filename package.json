@@ -1,0 +1,29 @@
+{
+  "name": "flowchat",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "lint": "turbo run lint --filter=!flowchat",
+    "typecheck": "turbo run typecheck --filter=!flowchat",
+    "test": "turbo run test --filter=!flowchat",
+    "build": "turbo run build --filter=!flowchat",
+    "dev:api": "pnpm --filter @flowchat/api dev",
+    "dev:worker": "pnpm --filter @flowchat/worker dev",
+    "dev:infra": "pnpm db:up",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down",
+    "db:health": "docker compose ps --format json"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.31.0",
+    "eslint": "^9.31.0",
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.37.0",
+    "vitest": "^3.2.4"
+  }
+}
