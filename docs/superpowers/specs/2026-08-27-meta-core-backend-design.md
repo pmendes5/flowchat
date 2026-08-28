@@ -14,16 +14,28 @@ Essas capacidades futuras não fazem parte da Sprint 1.
 
 Construir somente o backend fundamental necessário para provar a integração real com Instagram/Meta por meio deste fluxo:
 
-1. Um usuário comenta `TESTE` em um post ou reel real.
-2. A Meta envia o webhook ao FlowChat.
-3. O FlowChat valida, persiste e processa o evento.
-4. O FlowChat envia uma Private Reply: `Recebi seu comentário  Responda OI aqui para continuarmos.`
-5. O usuário responde `OI`.
-6. A Meta envia o webhook da DM.
-7. O FlowChat recebe e processa o evento.
-8. O FlowChat envia: `Funcionou ✅ Essa mensagem foi enviada pelo FlowChat.`
+1. Uma pessoa comenta a palavra-chave `QUERO` em um post ou reel real.
+2. A Meta envia o webhook do comentário ao FlowChat.
+3. O FlowChat valida, persiste, normaliza e processa o evento.
+4. O FlowChat publica uma resposta pública no comentário, por exemplo: `Te mandei uma mensagem  Dá uma olhadinha na sua DM.`
+5. Ao mesmo tempo, o FlowChat envia uma Private Reply na DM com uma mensagem semelhante a:
+
+   ```text
+   Oi!
+   Vi que você comentou QUERO.
+   Clique abaixo para continuar.
+   ```
+
+6. A Private Reply contém um botão regular do Instagram, com o texto `INICIAR AQUI` e o payload interno estável `FLOW_CONTINUE`.
+7. A pessoa clica em `INICIAR AQUI`.
+8. A Meta envia ao FlowChat o webhook de postback ou interação equivalente suportada pela Instagram Messaging API.
+9. O backend valida, persiste e normaliza o clique como `instagram.postback.received`.
+10. O Worker processa o evento.
+11. O FlowChat envia a segunda DM: `Funcionou ✅ O FlowChat recebeu seu clique e continuou a automação.`
 
 O fluxo deve funcionar com uma conta profissional real do Instagram.
+
+O botão inicial deve ser projetado como um botão regular anexado à mensagem, semelhante ao comportamento do ManyChat, usando postback ou a interação equivalente efetivamente suportada pela Instagram Messaging API. Ele não é uma Quick Reply. Quick Replies poderão ser suportadas futuramente como outro tipo de elemento de mensagem, fora do escopo desta Sprint.
 
 ## Arquitetura
 
@@ -103,6 +115,7 @@ Não haverá frontend na Sprint 1.
 Payloads específicos da Meta não devem vazar para o restante da aplicação. O package `meta` deve convertê-los em eventos internos estáveis, por exemplo:
 
 - `instagram.comment.created`;
+- `instagram.postback.received`;
 - `instagram.message.received`.
 
 As demais camadas devem trabalhar somente com os contratos internos do FlowChat.
@@ -123,13 +136,13 @@ Meta
 → Worker executa ações externas
 ```
 
-O endpoint de webhook deve validar, persistir, enfileirar e responder rapidamente. Ele não deve executar IA ou funis, aguardar processamento pesado nem conter lógica de negócio extensa.
+O endpoint de webhook deve contemplar os eventos necessários de comentário, mensagem e postback/interação, validar sua autenticidade, persistir o payload recebido, normalizá-lo, enfileirar o contrato interno correspondente e responder rapidamente. A assinatura, os campos e o formato exatos usados para identificar um postback devem ser confirmados contra a documentação Meta vigente e por validação experimental antes da integração real. O endpoint não deve executar IA ou funis, aguardar processamento pesado nem conter lógica de negócio extensa.
 
 ## Idempotência
 
-Reentregas do mesmo evento pela Meta não podem produzir duas mensagens. Quando houver um identificador externo confiável, ele deve ser persistido e usado para deduplicação. Quando não houver identificador único suficiente, deve ser usada uma chave determinística de deduplicação construída a partir dos campos estáveis do evento.
+Reentregas do mesmo evento pela Meta não podem repetir nenhum efeito externo. Isso inclui a resposta pública ao comentário, a Private Reply inicial e a segunda DM disparada pelo clique. Quando houver um identificador externo confiável, ele deve ser persistido e usado para deduplicação. Quando não houver identificador único suficiente, deve ser usada uma chave determinística de deduplicação construída a partir dos campos estáveis do evento.
 
-Os jobs também devem ser idempotentes, de modo que retries ou reprocessamentos não repitam efeitos externos. A implementação da estratégia de deduplicação e da idempotência dos jobs deve possuir testes.
+Os jobs também devem ser idempotentes, de modo que retries ou reprocessamentos não repitam efeitos externos. A idempotência deve cobrir tanto o processamento do comentário quanto o processamento do postback, incluindo a hipótese de o webhook ser entregue mais de uma vez ou o job ser executado novamente. A implementação da estratégia de deduplicação e da idempotência dos jobs deve possuir testes.
 
 ## Banco de dados inicial
 
@@ -204,6 +217,7 @@ Campos conceituais:
 - `direction`;
 - `type`;
 - `text`;
+- dados estruturados da interação, quando aplicáveis, incluindo o payload interno do botão;
 - `rawPayload`;
 - `createdAt`.
 
@@ -217,7 +231,7 @@ Permissões previstas inicialmente:
 - `instagram_business_manage_comments`;
 - `instagram_business_manage_messages`.
 
-A arquitetura não deve fixar uma versão específica da Graph API. A versão será configurável via ambiente ou configuração para facilitar upgrades futuros. Antes da implementação real, permissões, endpoints e payloads devem ser conferidos contra a documentação vigente da Meta.
+A arquitetura não deve fixar uma versão específica da Graph API. A versão será configurável via ambiente ou configuração para facilitar upgrades futuros. Antes da implementação real, permissões, endpoints, tipos de botão, suporte a postback ou interação equivalente e payloads de entrada e saída devem ser conferidos contra a documentação vigente da Meta e validados experimentalmente quando necessário. Esta especificação não fixa nomes de campos, formatos ou endpoints que ainda dependam dessa verificação.
 
 ## OAuth
 
@@ -288,10 +302,14 @@ O BullMQ deve aplicar retries somente a erros potencialmente transitórios. Jobs
 
 A Sprint 1 não implementará o Flow Engine. Pode existir um handler temporário, claramente isolado, destinado apenas ao teste end-to-end aprovado:
 
-- Se um comentário contiver `TESTE`, enviar a Private Reply definida no objetivo da Sprint.
-- Quando chegar uma mensagem `OI`, enviar a resposta fixa definida no objetivo da Sprint.
+- se um comentário contiver a palavra-chave `QUERO`, publicar uma única resposta pública e enviar uma única Private Reply conforme o objetivo da Sprint;
+- anexar à Private Reply um botão regular com texto `INICIAR AQUI` e payload interno estável `FLOW_CONTINUE`, usando postback ou interação equivalente suportada pela Instagram Messaging API;
+- quando chegar o clique com o payload esperado, enviar uma única vez a segunda DM definida no objetivo da Sprint;
+- ignorar, rejeitar com segurança ou registrar como não aplicável um payload que não corresponda a `FLOW_CONTINUE`, sem continuar a automação.
 
-Esse comportamento temporário não deve contaminar a arquitetura do futuro Flow Engine.
+`QUERO`, os textos das mensagens e `FLOW_CONTINUE` serão configuração temporária ou valores hardcoded claramente isolados. A arquitetura deve permitir que futuramente esses valores venham da configuração de cada automação e que o payload identifique flow, versão, node ou outros dados, sem implementar agora editor visual, configuração de automações ou Flow Engine.
+
+O primeiro botão não deve ser modelado ou documentado como Quick Reply. Quick Replies permanecem apenas como uma possibilidade futura e distinta.
 
 ## Architecture Principles
 
@@ -322,8 +340,12 @@ Todos deverão passar antes de a Sprint 1 ser considerada concluída.
 Devem existir testes para:
 
 - normalização de payload Meta;
+- normalização do postback/interação do botão para `instagram.postback.received`;
+- validação do payload `FLOW_CONTINUE` antes de continuar a automação;
 - validação dos contratos;
-- idempotência;
+- idempotência do processamento do comentário e do clique;
+- garantia de que a reentrega do comentário não produz múltiplas respostas públicas nem múltiplas Private Replies;
+- garantia de que um webhook de postback duplicado não envia a segunda DM duas vezes;
 - webhook verification;
 - comportamento do worker;
 - tratamento de erros e retries;
@@ -355,24 +377,28 @@ Não implementar nesta Sprint:
 
 A Sprint 1 só termina quando:
 
-1. O ambiente sobe localmente.
+1. O ambiente local funciona.
 2. PostgreSQL funciona.
 3. Redis funciona.
 4. A API funciona.
 5. O Worker funciona.
 6. O OAuth conecta uma conta profissional real.
-7. A Meta valida o webhook público.
-8. Um comentário real com `TESTE` chega ao backend.
-9. Apenas uma Private Reply é enviada.
-10. A resposta `OI` chega ao backend.
-11. A segunda mensagem é enviada.
-12. Eventos e mensagens ficam persistidos.
-13. Um webhook duplicado não duplica a DM.
-14. O lint passa.
-15. O typecheck passa.
-16. Os testes passam.
-17. O build passa.
-18. O README explica como executar o projeto localmente.
+7. O webhook público é validado pela Meta.
+8. Um comentário real com `QUERO` chega ao backend.
+9. A resposta pública aparece no comentário.
+10. Apenas uma resposta pública é criada.
+11. A Private Reply real chega na DM.
+12. A Private Reply contém o botão regular `INICIAR AQUI`.
+13. Um clique real no botão chega ao webhook.
+14. O evento de postback é normalizado e processado.
+15. A segunda DM é enviada.
+16. Um webhook duplicado não duplica nenhuma dessas ações, incluindo resposta pública, Private Reply ou segunda DM.
+17. Eventos e mensagens relevantes ficam persistidos.
+18. O lint passa.
+19. O typecheck passa.
+20. Os testes passam.
+21. O build passa.
+22. O README explica como executar o projeto localmente.
 
 ## Decisões para o futuro
 
@@ -392,6 +418,7 @@ A arquitetura deve permanecer preparada para evolução, mas sem implementar ago
 - **Permissões e App Review:** permissões necessárias podem depender de aprovação da Meta e impedir o fluxo real até sua liberação.
 - **Expiração de token:** tokens expirados podem interromper chamadas externas e devem ser tratados como falhas de autenticação, sem retries infinitos.
 - **Duplicação ou reentrega de webhook:** a Meta pode reenviar eventos; deduplicação persistida e jobs idempotentes são obrigatórios para evitar mensagens duplicadas.
+- **Variação no suporte a botões e postbacks:** o tipo de botão regular, a interação equivalente, os campos do payload e o evento recebido podem variar conforme a API e a conta; todos devem ser confirmados na documentação vigente e no ambiente real antes da implementação.
 - **Indisponibilidade de Redis ou PostgreSQL:** falhas nesses componentes podem impedir enfileiramento ou persistência e precisam ser observáveis.
 - **Mudança da URL do túnel local:** alterações na URL pública podem exigir atualização da configuração do webhook e do OAuth na aplicação Meta.
 - **Diferenças entre desenvolvimento e produção:** túnel e processos locais não reproduzem integralmente o ambiente de produção, o que pode revelar diferenças operacionais posteriormente.
