@@ -17,3 +17,8 @@ export {
   processWebhookJobSchema,
 } from './jobs.js';
 export type { ProcessWebhookJob } from './jobs.js';
+export type {
+  OpeningPrivateReplyInput,
+  OpeningPrivateReplyResult,
+  OpeningPrivateReplySender,
+} from './opening-private-reply.js';

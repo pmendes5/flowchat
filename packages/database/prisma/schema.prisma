@@ -88,6 +88,7 @@ model ExternalEffect {
   providerRequestId String               @unique
   providerResultId  String?
   attempts          Int                  @default(0)
+  claimedAt         DateTime             @default(now())
   lastErrorCode     String?
   createdAt         DateTime             @default(now())
   completedAt       DateTime?
@@ -105,6 +106,7 @@ enum AccountStatus {
 
 enum WebhookStatus {
   PENDING
+  ENQUEUED
   PROCESSING
   COMPLETED
   FAILED

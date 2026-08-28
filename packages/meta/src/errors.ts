@@ -14,3 +14,12 @@ export class MetaApiError extends Error {
     return this.kind === 'transient';
   }
 }
+
+export class MetaCapabilityNotVerifiedError extends Error {
+  readonly capability = 'OPENING_PRIVATE_REPLY_REGULAR_POSTBACK' as const;
+
+  constructor() {
+    super('Meta capability not verified: OPENING_PRIVATE_REPLY_REGULAR_POSTBACK');
+    this.name = 'MetaCapabilityNotVerifiedError';
+  }
+}

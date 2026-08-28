@@ -1,0 +1,17 @@
+{
+  "object": "instagram",
+  "entry": [
+    {
+      "id": "ig-1",
+      "time": 1787918400,
+      "messaging": [
+        {
+          "sender": { "id": "u-1" },
+          "recipient": { "id": "ig-1" },
+          "timestamp": 1787918400000,
+          "postback": { "mid": "mid-1", "payload": "FLOW_CONTINUE" }
+        }
+      ]
+    }
+  ]
+}

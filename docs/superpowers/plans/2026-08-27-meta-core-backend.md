@@ -502,6 +502,13 @@ export class MetaApiError extends Error {
 
 ### Task 11: OAuth Meta e lookup de conta
 
+**Status: `BLOCKED_BY_VERIFICATION`.** O host `graph.instagram.com`, o login type
+Business Login for Instagram e as permissões `instagram_business_basic`,
+`instagram_business_manage_messages` e `instagram_business_manage_comments`
+estão confirmados. Authorization endpoint, token exchange e campos de lookup
+aguardam confirmação no Meta App Dashboard/documentação oficial acessível.
+Nenhum contrato OAuth antigo deve ser implementado ou inferido.
+
 **Files**
 - Create: `packages/meta/src/oauth.ts`, `packages/meta/src/accounts.ts`, `packages/meta/src/oauth.test.ts`
 - Modify: `packages/meta/src/index.ts`
@@ -602,6 +609,9 @@ export class MetaCapabilityNotVerifiedError extends Error {
 - [ ] Step 5: Executar `git add packages/meta/src && git commit -m "feat: add focused meta outbound operations"`.
 
 ### Task 14: Endpoints OAuth da API
+
+**Status: `BLOCKED_BY_VERIFICATION` via Task 11.** Pular até que o contrato OAuth
+da Task 11 seja verificado.
 
 **Files**
 - Create: `apps/api/src/auth/oauth-state.service.ts`, `apps/api/src/auth/instagram-auth.controller.ts`, `apps/api/src/auth/auth.module.ts`, `apps/api/src/auth/instagram-auth.controller.test.ts`
@@ -859,6 +869,11 @@ switch (job.data.event.type) {
 - [ ] Step 5: Executar `git add apps/worker/src && git commit -m "feat: process instagram postbacks and events"`.
 
 ### Task 21: Testes end-to-end de idempotência e integração API/Worker
+
+**Status parcial: `HOST_VERIFICATION_REQUIRED`.** A integração real com
+PostgreSQL/Redis via Compose não pode ser executada no sandbox atual porque o
+Docker config e o pipe `docker_engine` retornam acesso negado. As partes com
+mocks/in-memory e sem OAuth real podem continuar.
 
 **Files**
 - Create: `test/helpers/meta-server.ts`, `test/helpers/infrastructure.ts`, `test/integration/health.integration.test.ts`, `test/integration/webhook-worker.integration.test.ts`, `test/integration/idempotency.integration.test.ts`

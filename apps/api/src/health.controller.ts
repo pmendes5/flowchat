@@ -5,6 +5,7 @@ export const HEALTH_PROBES = Symbol('HEALTH_PROBES');
 export interface HealthProbes {
   database(): Promise<boolean>;
   redis(): Promise<boolean>;
+  onApplicationShutdown?(): Promise<void>;
 }
 
 @Controller('health')

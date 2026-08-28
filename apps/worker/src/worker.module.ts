@@ -5,6 +5,7 @@ import {
   createEventWorker,
   type EventJobHandler,
 } from './queue.js';
+export { PersistenceService, createPrismaPersistenceDatabase } from './persistence.service.js';
 
 export type WorkerRuntime = Readonly<{
   queue: Queue<ProcessWebhookJob>;
