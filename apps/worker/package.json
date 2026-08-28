@@ -1,5 +1,5 @@
 {
-  "name": "@flowchat/api",
+  "name": "@flowchat/worker",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,18 +16,11 @@
     "@flowchat/database": "workspace:*",
     "@flowchat/meta": "workspace:*",
     "@flowchat/security": "workspace:*",
-    "@nestjs/common": "^11.1.6",
-    "@nestjs/core": "^11.1.6",
-    "@nestjs/platform-express": "^11.1.6",
     "bullmq": "^5.58.5",
-    "ioredis": "^5.7.0",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "ioredis": "^5.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
-    "@types/supertest": "^6.0.3",
-    "supertest": "^7.1.4",
     "tsx": "^4.20.5"
   }
 }

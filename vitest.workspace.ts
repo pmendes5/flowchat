@@ -37,4 +37,10 @@ export default defineWorkspace([
       environment: 'node',
     },
   },
+  {
+    test: {
+      include: ['apps/worker/src/**/*.test.ts'],
+      environment: 'node',
+    },
+  },
 ]);

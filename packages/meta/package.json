@@ -1,9 +1,8 @@
 {
-  "name": "@flowchat/config",
+  "name": "@flowchat/meta",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
   "scripts": {
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc --noEmit",
@@ -11,6 +10,8 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@flowchat/config": "workspace:*",
+    "@flowchat/contracts": "workspace:*",
     "zod": "^4.1.5"
   },
   "devDependencies": {

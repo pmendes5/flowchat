@@ -1,6 +1,6 @@
 import type { AppConfig } from '@flowchat/config';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'vitest';
 import { createApiApp } from './main.js';
 
 const testConfig: AppConfig = {
