@@ -15,11 +15,11 @@ FlowChat branch: `feat/openreply-foundation`
 
 ## Local runtime gate
 
-- [ ] PostgreSQL healthy
-- [ ] Redis healthy
-- [ ] Prisma migrations deployed
-- [ ] Next.js application reachable
-- [ ] BullMQ worker connected and running
+- [x] PostgreSQL healthy
+- [x] Redis healthy
+- [x] Prisma migrations deployed
+- [x] Next.js application reachable
+- [x] BullMQ worker connected and running
 
 ## Auth/workspace gate
 
