@@ -23,9 +23,9 @@ FlowChat branch: `feat/openreply-foundation`
 
 ## Auth/workspace gate
 
-- [ ] Magic-link login succeeds
-- [ ] Authenticated dashboard loads
-- [ ] Workspace is created/resolved for the signed-in user
+- [x] Magic-link login succeeds
+- [x] Authenticated dashboard loads
+- [x] Workspace is created/resolved for the signed-in user
 
 ## Instagram connection gate
 
