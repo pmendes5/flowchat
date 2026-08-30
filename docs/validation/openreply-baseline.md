@@ -29,11 +29,11 @@ FlowChat branch: `feat/openreply-foundation`
 
 ## Instagram connection gate
 
-- [ ] Public HTTPS tunnel reaches the local app
-- [ ] Meta webhook verification succeeds at `/api/webhook`
-- [ ] Instagram OAuth returns through `/api/instagram/callback`
-- [ ] Connected Instagram account is stored
-- [ ] `webhookSubscribed` is true or subscription success is otherwise verified
+- [x] Public HTTPS tunnel reaches the local app
+- [x] Meta webhook verification succeeds at `/api/webhook`
+- [x] Instagram OAuth returns through `/api/instagram/callback`
+- [x] Connected Instagram account is stored
+- [x] `webhookSubscribed` is true or subscription success is otherwise verified
 
 ## Real `QUERO` acceptance gate
 
